@@ -1,3 +1,9 @@
+# Ignore everything inside these folders
+data/*
+
+# But keep the placeholder files
+!data/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
