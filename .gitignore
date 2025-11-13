@@ -1,6 +1,8 @@
 # Ignore everything inside these folders
 data/*
 
+.DS_Store
+
 # But keep the placeholder files
 !data/.gitkeep
 
