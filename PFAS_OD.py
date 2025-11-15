@@ -10,28 +10,33 @@ from OTITS.DATA import *
 from OTITS.OD import *
 
 N = 45 # Frames to run
-
+LOCAL_AREA_SCALE = 0.5
 if __name__ == "__main__":
+    
+    # Init models & feature extractors
+    sift = cv2.SIFT_create()
+
     model = YOLO("yolo11x.pt")
     des_classes = [0, 1, 2]
     label_path = "34759_final_project_rect\seq_01\labels.txt" if SEQ == 1 else "34759_final_project_rect\\seq_02\\labels.txt"
     annotations = load_ground_truth(label_path) 
 
-    prev_detections = None
+    
     # Implementing ByteTrack
     tau = 0.6
     YOLOCONF = 0.4
     DEADALIVERATIO = 0.25 # Not used
-    DEAD_TIME = 10
+    DEAD_TIME = 20
     T = [] # tracklets
 
     base_id = 0 # ID to start counting from
 
     for k in range(N): # for frame in video
         # LEFT IMAGE
-        
-        ### Perform Inference ###
         left_path = get_left_image_path(k)
+        img_left = cv2.imread(left_path)
+
+        ### Perform Inference ###
         D_k = model(source=left_path, classes=des_classes,conf=YOLOCONF)
         
         D_high = []
@@ -54,7 +59,10 @@ if __name__ == "__main__":
             t.kf.predict()
         
         ### First Association ###
-        matches = find_matches_with_hungarian_algorithm(T, D_high)
+        matches = find_matches_with_hungarian_algorithm(T, D_high,
+                                                        similarity="IoU",
+                                                        img=img_left,
+                                                        sift=sift)
 
         # Keep track of which detections and tracks were used
         matched_track_ids = set()
@@ -62,8 +70,17 @@ if __name__ == "__main__":
 
         for i, j in matches:
             # Update track i with detection j
-            z = D_high[j][0]  # detection bbox [x1,y1,x2,y2]
+            bbox = D_high[j][0]  # detection bbox [x1,y1,x2,y2]
+            z = xyxy_to_xysr(bbox)
             T[i].kf.update(z)  # Kalman filter correction step
+            
+            local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
+            T[i].local_area = local_area
+            gray = cv2.cvtColor(local_area,cv2.COLOR_BGR2GRAY)
+            kp, des = sift.detectAndCompute(gray, None)
+            T[i].local_features = des
+            
+
             matched_track_ids.add(i)
             matched_det_ids.add(j)
 
@@ -88,8 +105,17 @@ if __name__ == "__main__":
 
         for i, j in matches:
             # Update track i with detection j
-            z = D_low[j][0] # detection bbox [x1,y1,x2,y2]
-            T[i].kf.update(z)  # Kalman filter correction step
+            bbox = D_low[j][0] # detection bbox [x1,y1,x2,y2]
+            z = xyxy_to_xysr(bbox)
+            T_remain[i].kf.update(z)  # Kalman filter correction step
+
+            local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
+            T_remain[i].local_area = local_area
+            gray = cv2.cvtColor(local_area,cv2.COLOR_BGR2GRAY)
+            kp, des = sift.detectAndCompute(gray, None)
+            T_remain[i].local_features = des
+            
+
             matched_track_ids.add(i)
             matched_det_ids.add(j)
 
@@ -116,12 +142,22 @@ if __name__ == "__main__":
         for d in D_remain:
             base_id += 1
             bbox, conf, cls = d
-            T.append(Tracklet(id=base_id, z=bbox, cls=cls))
+
+            local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
+            cv2.imshow("Local Area of Tracklet", local_area)
+            gray = cv2.cvtColor(local_area,cv2.COLOR_BGR2GRAY)
+            kp, des = sift.detectAndCompute(gray, None)
+            local_features = des
+            T.append(Tracklet(id=base_id, 
+                              z=xyxy_to_xysr(bbox), 
+                              cls=cls,
+                              local_area=local_area,
+                              local_features=local_features)
+                              )
 
 
         # Visualization
-        img_left = cv2.imread(left_path)
-        img_left = draw_ground_truth(img_left, annotations, k)
+        #img_left = draw_ground_truth(img_left, annotations, k)
         #img_left = draw_yolo_predictions(img_left, D_k)
         img_left = draw_tracklets(img_left,T)
         cv2.imshow("Left Image with Ground Truth + YOLO", img_left)
