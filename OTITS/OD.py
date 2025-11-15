@@ -8,6 +8,8 @@ from scipy.optimize import linear_sum_assignment
 from filterpy.kalman import KalmanFilter
 from scipy.linalg import block_diag
 
+MATCHTHRESHHOLD = 0.3
+
 dt = 1
 point_model = np.array([[1, dt],
                   [0, 1]])
@@ -70,7 +72,7 @@ def find_matches_with_hungarian_algorithm(tracks, detections, verbose=False):
     # Apply threshold
     matches = []
     for i, j in zip(row_ind, col_ind):
-        if iou(tracks[i], detections[j]) > 0.1:  # IoU threshold
+        if iou(tracks[i], detections[j]) > MATCHTHRESHHOLD:  # IoU threshold
             matches.append((i, j))  # track i matched with detection j
 
     if verbose:
