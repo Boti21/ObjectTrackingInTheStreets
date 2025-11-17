@@ -9,8 +9,8 @@ import time
 from OTITS.DATA import *
 from OTITS.OD import *
 
-N = 45 # Frames to run
-LOCAL_AREA_SCALE = 0.5
+N = 200 # Frames to run
+LOCAL_AREA_SCALE = 0.2
 if __name__ == "__main__":
     
     # Init models & feature extractors
@@ -24,9 +24,9 @@ if __name__ == "__main__":
     
     # Implementing ByteTrack
     tau = 0.6
-    YOLOCONF = 0.4
+    YOLOCONF = 0.1
     DEADALIVERATIO = 0.25 # Not used
-    DEAD_TIME = 20
+    DEAD_TIME = 90
     T = [] # tracklets
 
     base_id = 0 # ID to start counting from
@@ -162,7 +162,7 @@ if __name__ == "__main__":
         img_left = draw_tracklets(img_left,T)
         cv2.imshow("Left Image with Ground Truth + YOLO", img_left)
 
-        cv2.waitKey(100)
+        cv2.waitKey(25)
 
     cv2.destroyAllWindows()
 

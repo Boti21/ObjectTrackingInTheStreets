@@ -7,7 +7,7 @@ from scipy.optimize import linear_sum_assignment
 from filterpy.kalman import KalmanFilter
 from scipy.linalg import block_diag
 
-MATCHTHRESHOLD = 0.2
+MATCHTHRESHOLD = 0.05
 
 dt = 1
 point_model = np.array([[1, dt],
@@ -15,7 +15,7 @@ point_model = np.array([[1, dt],
 # State-transition Matrix for u,v,s,r,u_dot,v_dot,s_dot
 F = np.array([[1, 0, 0, 0, dt, 0, 0], # u
               [0, 1, 0, 0, 0, dt, 0], # v
-              [0, 0, 1, 0, 0, 0, dt], # s
+              [0, 0, 1, 0, 0, 0, 0], # s took out speed
               [0, 0, 0, 1, 0, 0, 0], # r
               [0, 0, 0, 0, 1, 0, 0], # u_dot
               [0, 0, 0, 0, 0, 1, 0], # v_dot
@@ -34,8 +34,8 @@ H = np.array([[1,0,0,0,0,0,0,0],                                # Measurment Mod
               [0,0,0,0,0,0,1,0],])
 """
 
-Q = np.diag([1,1,10,10,10,10,1]) 
-R = np.diag([5,5,1,10])
+Q = np.diag([1,1,1,1,0.1,0.1,1]) 
+R = np.diag([5,5,1,1])
 
 class Tracklet:
     def __init__(self,id,z,cls,local_area=None,local_features=None):
