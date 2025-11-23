@@ -27,8 +27,7 @@ from PIL import Image
 tau = 0.6
 YOLOCONF = 0.3
 MATCHTHRESHOLD_IoU = 0.1#0.05
-MATCHTHRESHOLD = 0.1#0.05
-MATCHTHRESHOLD_ReID = 0.9
+MATCHTHRESHOLD_ReID = 0.8
 DEADALIVERATIO = 0.25 # Not used
 DEAD_TIME = 90
 LOCAL_AREA_SCALE = 1
@@ -39,7 +38,7 @@ if FIRST_ASSOCIATION_METRIC == "ReID":
     # Load pretrained ResNet50
     resnet50 = models.resnet50(pretrained=True)
 
-    # Remove the final classification layer (fc) → keep as feature extractor
+    # Remove the final classification layer (fc) as feature extractor
     resnet50 = nn.Sequential(*list(resnet50.children())[:-1])  # outputs 2048‑D feature vector
 
     # Move model to GPU if available
@@ -387,8 +386,8 @@ class BYTETrack:
 
             if FIRST_ASSOCIATION_METRIC == "ReID":
                 local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
-                T_remain[i].local_area = local_area
-                T_remain[i].embedding = get_resnet50_embedding(local_area)
+                #T_remain[i].local_area = local_area
+                #T_remain[i].embedding = get_resnet50_embedding(local_area)
             #gray = cv2.cvtColor(local_area,cv2.COLOR_BGR2GRAY)
             #kp, des = sift.detectAndCompute(gray, None)
             #T_remain[i].local_features = des

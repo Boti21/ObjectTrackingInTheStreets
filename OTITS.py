@@ -15,10 +15,10 @@ if __name__ == "__main__":
     
     # Init models & feature extractors
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = YOLO("best.pt").to(device)
+    model = YOLO("OTITS/models/best.pt").to(device)
     
     des_classes = [0,1,2]
-    label_path = "34759_final_project_rect\seq_01\labels.txt" if SEQ == 1 else "34759_final_project_rect\\seq_02\\labels.txt"
+    label_path = "data\\34759_final_project_rect\\seq_01\\labels.txt" if SEQ == 1 else "data\\34759_final_project_rect\\seq_02\\labels.txt"
     annotations = load_ground_truth(label_path) 
 
     
