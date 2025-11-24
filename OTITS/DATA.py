@@ -5,7 +5,7 @@ import cv2
 import os
 import time
 
-SEQ = 2
+SEQ = 3
 
 def load_ground_truth(filepath):
     with open(filepath, "r") as f:
@@ -37,11 +37,11 @@ def draw_ground_truth(image, annotations, frame_id):
 
 def get_left_image_path(index,seq=SEQ):
     filename = f"{index:06d}.png" if seq == 1 else f"{index:010d}.png"
-    return os.path.join(f"34759_final_project_rect\\seq_0{seq}\\image_02\\data", filename)
+    return os.path.join(f"data\\34759_final_project_rect\\seq_0{seq}\\image_02\\data", filename)
 
 def get_right_image_path(index,seq=SEQ):
     filename = f"{index:06d}.png" if seq == 1 else f"{index:010d}.png"
-    return os.path.join(f"34759_final_project_rect\\seq_0{seq}\\image_03\\data", filename)
+    return os.path.join(f"data\\34759_final_project_rect\\seq_0{seq}\\image_03\\data", filename)
 
 def get_left_image(index,seq=SEQ):
     return cv2.imread(get_left_image_path(index,SEQ))
