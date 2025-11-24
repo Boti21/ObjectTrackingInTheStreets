@@ -1,3 +1,11 @@
+# Ignore everything inside these folders
+data/*
+
+.DS_Store
+
+# But keep the placeholder files
+!data/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -205,3 +213,4 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+*.pt
