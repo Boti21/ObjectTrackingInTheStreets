@@ -24,8 +24,8 @@ from PIL import Image
 
 
 # ByteTrack Params
-tau = 0.6
-YOLOCONF = 0.3
+tau = 0.5
+YOLOCONF = 0.2
 MATCHTHRESHOLD_IoU = 0.1#0.05
 MATCHTHRESHOLD_ReID = 0.8
 DEADALIVERATIO = 0.25 # Not used
@@ -33,6 +33,10 @@ DEAD_TIME = 90
 LOCAL_AREA_SCALE = 1
 FIRST_ASSOCIATION_METRIC = "IoU"# #"IoU", "ReID"
 base_id = 0 # ID to start counting from
+
+CLASS_MAP = {0: "Car", 1: "Cyclist", 2: "Pedestrian"}
+
+
 
 if FIRST_ASSOCIATION_METRIC == "ReID":
     # Load pretrained ResNet50
@@ -111,7 +115,7 @@ R = np.diag([10,10,1,1])
 #R = np.diag([100,100,1,1])
 
 class Tracklet:
-    def __init__(self,id,z,cls,local_area=None,local_features=None):
+    def __init__(self,id,z,cls,xyz=np.array([0,0,0]),local_area=None,local_features=None):
         
         # Init internal Kalman Filter
         kf = KalmanFilter(dim_x=6, dim_z=4)  
@@ -125,6 +129,9 @@ class Tracklet:
 
         self.kf = kf
         
+        # Location
+        self.xyz = xyz
+
         # Init ID
         self.id = id
 
@@ -546,3 +553,24 @@ def filter_results_by_class(res, target_cls):
     # Assign only the filtered boxes
     new_res.boxes = res.boxes[cls_mask]
     return new_res
+
+def add_cls_count(img_left,T):
+    num_cars = sum(1 for t in T if t.cls == 0)
+    num_cyclists    = sum(1 for t in T if t.cls == 1)
+    num_pedestrians = sum(1 for t in T if t.cls == 2)
+
+    # Prepare text lines
+    lines = [
+        f"Cars: {num_cars}",
+        f"Cyclists: {num_cyclists}",
+        f"Pedestrians: {num_pedestrians}"
+    ]
+
+    # Draw each line in white in the top-left corner
+    y0, dy = 30, 30  # starting y and line spacing
+    for i, line in enumerate(lines):
+        y = y0 + i*dy
+        cv2.putText(img_left, line, (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2, cv2.LINE_AA)
+        
+    return img_left

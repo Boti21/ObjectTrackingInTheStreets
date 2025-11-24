@@ -8,6 +8,7 @@ import time
 
 from OTITS.DATA import *
 from OTITS.OD import *
+from OTITS.EVAL import *
 
 N = 200 # Frames to run
 
@@ -29,7 +30,10 @@ if __name__ == "__main__":
     
     
     for k in range(N): # for frame in video
-        # LEFT IMAGE
+        #################################
+        #           Tracking            #
+        #################################
+        # Get left image
         left_path = get_left_image_path(k)
         img_left = cv2.imread(left_path)
 
@@ -52,11 +56,33 @@ if __name__ == "__main__":
         T_car = car_tracker.step(D_k_cars,img_left)
         T.extend(T_car)
        
-       
-        # Visualization
+        #################################
+        #           Evaluation          #
+        #################################
+        frame_annotations = get_frame_annotations(annotations, k)
+        #rmse_ped = rmse_xyz(T_pedestrian, frame_annotations)
+        #rmse_cyc = rmse_xyz(T_cyclist, frame_annotations)
+        #rmse_car = rmse_xyz(T_car, frame_annotations)
+        
+
+        preds = []
+        for tr in T:  
+            preds.append({
+                "bbox": xysr_to_xyxy(tr.kf.x[:4]),   
+                "class": tr.cls,
+            })
+
+        metrics = precision_recall(preds, frame_annotations, ["Car","Cyclist","Pedestrian"])
+        print(f"Frame {k}: {metrics}")
+
+        #################################
+        #          Visualization        #
+        #################################
         #img_left = draw_ground_truth(img_left, annotations, k)
         #img_left = draw_yolo_predictions(img_left, results)
         img_left = draw_tracklets(img_left,T)
+        img_left = add_cls_count(img_left,T)
+        
         cv2.imshow("Left Image with Ground Truth + YOLO", img_left)
 
         cv2.waitKey(25)

@@ -5,7 +5,7 @@ import cv2
 import os
 import time
 
-SEQ = 3
+SEQ = 1
 
 def load_ground_truth(filepath):
     with open(filepath, "r") as f:
@@ -15,11 +15,26 @@ def load_ground_truth(filepath):
 
 def parse_ground_truth_line(line):
     parts = line.strip().split()
+    frame_id = int(parts[0])
+    obj_class = parts[2]
+    
+    # 2D bounding box
+    bbox = [float(parts[6]), float(parts[7]), float(parts[8]), float(parts[9])]
+    
+    # 3D location in camera coordinates
+    x, y, z = float(parts[11]), float(parts[12]), float(parts[13])
+    
+    # Distance from camera (Euclidean)
+    distance = (x**2 + y**2 + z**2) ** 0.5
+    
     return {
-        "frame_id": int(parts[0]),
-        "class": parts[2],
-        "bbox": [float(parts[6]), float(parts[7]), float(parts[8]), float(parts[9])]
+        "frame_id": frame_id,
+        "class": obj_class,
+        "bbox": bbox,
+        "location": [x, y, z],
+        "distance": distance
     }
+
 
 def draw_ground_truth(image, annotations, frame_id):
     for ann in annotations:
@@ -30,6 +45,9 @@ def draw_ground_truth(image, annotations, frame_id):
             cv2.putText(image, ann["class"], (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     return image
 
+def get_frame_annotations(annotations, frame_id):
+    """Return ground truth objects for a specific frame."""
+    return [gt for gt in annotations if gt["frame_id"] == frame_id]
 
 
 
