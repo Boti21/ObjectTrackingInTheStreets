@@ -55,12 +55,11 @@ def get_frame_annotations(annotations, frame_id):
 
 def get_left_image_path(index,seq=SEQ):
     filename = f"{index:06d}.png" if seq == 1 else f"{index:010d}.png"
-    return os.path.join(f"data\\34759_final_project_rect\\seq_0{seq}\\image_02\\data", filename)
+    return os.path.join("data", "34759_final_project_rect",f"seq_{seq:02d}","image_02","data", filename)
 
 def get_right_image_path(index,seq=SEQ):
     filename = f"{index:06d}.png" if seq == 1 else f"{index:010d}.png"
-    return os.path.join(f"data\\34759_final_project_rect\\seq_0{seq}\\image_03\\data", filename)
-
+    return os.path.join("data", "34759_final_project_rect",f"seq_{seq:02d}","image_03","data", filename)
 def get_left_image(index,seq=SEQ):
     return cv2.imread(get_left_image_path(index,SEQ))
 def get_right_image(index,seq=SEQ):
