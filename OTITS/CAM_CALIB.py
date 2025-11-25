@@ -434,12 +434,14 @@ def get_rect_map(mtx_l, dist_l, mtx_r, dist_r, R, T, img_shape, alpha):
         R, T,
         alpha=alpha # alpha=0 crops the image to show only valid pixels, alpha=1 shows all pixels
     )
+    #print(f"Valid ROI: {valid_roi_left}")
+    #print(f"Valid ROI: {valid_roi_right}")
 
     # Create the undistortion and rectification maps for each camera
     map_l_x, map_l_y = cv2.initUndistortRectifyMap(mtx_l, dist_l, R1, P1, img_shape, cv2.CV_32FC1)
     map_r_x, map_r_y = cv2.initUndistortRectifyMap(mtx_r, dist_r, R2, P2, img_shape, cv2.CV_32FC1)
 
-    return map_l_x, map_l_y, map_r_x, map_r_y
+    return map_l_x, map_l_y, map_r_x, map_r_y, P1, P2
 
 def rect_img_pair(left_img, right_img, 
                   map_l_x, map_l_y,

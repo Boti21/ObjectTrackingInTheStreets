@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import numpy as np
 import cv2
+import glob
 
 import os
 import time
@@ -57,10 +58,26 @@ def get_left_image_path(index,seq=SEQ):
     filename = f"{index:06d}.png" if seq == 1 else f"{index:010d}.png"
     return os.path.join("data", "34759_final_project_rect",f"seq_{seq:02d}","image_02","data", filename)
 
+'''
+def get_left_image_path_raw(index,seq=SEQ):
+    path = os.path.join("data", "34759_final_project_raw",f"seq_{seq:02d}","image_02","data/")
+    right_path = sorted(glob.glob(path + '*.png'))
+    return right_path[index]
+'''
+
 def get_right_image_path(index,seq=SEQ):
     filename = f"{index:06d}.png" if seq == 1 else f"{index:010d}.png"
     return os.path.join("data", "34759_final_project_rect",f"seq_{seq:02d}","image_03","data", filename)
+
+'''
+def get_right_image_path_raw(index,seq=SEQ):
+    path = os.path.join("data", "34759_final_project_raw",f"seq_{seq:02d}","image_03","data")
+    right_path = sorted(glob.glob(path + '*.png'))
+    return right_path[index]
+'''
+
 def get_left_image(index,seq=SEQ):
     return cv2.imread(get_left_image_path(index,SEQ))
+
 def get_right_image(index,seq=SEQ):
     return cv2.imread(get_right_image_path(index,SEQ))

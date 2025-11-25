@@ -19,6 +19,7 @@ from OTITS.three_d_pos_calc import calculate_3d_position
 N = 200 # Frames to run
 
 calibrate = False
+use_our_calib = False
 
 if __name__ == "__main__":
     
@@ -30,15 +31,16 @@ if __name__ == "__main__":
     label_path = os.path.join("data","34759_final_project_rect",f"seq_{SEQ:02d}","labels.txt")
     annotations = load_ground_truth(label_path) 
 
-    # Init disparity module
-    focal_length = 7.070493e+02
-    baseline = 0.54
-    disparity_module = DisparityModule_SGM(focal_length, baseline)
-
     # Initiate ByteTrack
     pedestrian_tracker = BYTETrack(0)
     cyclist_tracker = BYTETrack(100)
     car_tracker = BYTETrack(200)
+
+    focal_length = 7.070493e+02
+    baseline = 0.54
+
+    print(f'Focal length: {focal_length}')
+    print(f'Baseline: {baseline}')
     
     # Raw paths
     left_raw_path = ''
@@ -54,10 +56,22 @@ if __name__ == "__main__":
         left_raw_path = raw_path + "seq_02/image_02/data/"
         right_raw_path = raw_path + "seq_02/image_03/data/"
 
+
+    our_calib_left_path = os.path.join("data", "34759_final_project_raw",f"seq_{SEQ:02d}","image_02","data/")
+    our_calib_left_images = sorted(glob.glob(our_calib_left_path + '*.png'))
+
+    our_calib_right_path = os.path.join("data", "34759_final_project_raw",f"seq_{SEQ:02d}","image_03","data/")
+    our_calib_right_images = sorted(glob.glob(our_calib_left_path + '*.png'))
+
+
+
     # Calibrating camera
+    left_calib_path = 'data/34759_final_project_raw/calib/image_02/data/'
+    right_calib_path = 'data/34759_final_project_raw/calib/image_03/data/'
+
     if calibrate:
-        ret_stereo, mtx_l, dist_l, mtx_r, dist_r, R, T, E, F = calibrate_cameras(left_raw_path=left_raw_path,
-                                                                             right_raw_path=right_raw_path,
+        ret_stereo, mtx_l, dist_l, mtx_r, dist_r, R, T, E, F = calibrate_cameras(left_raw_path=left_calib_path,
+                                                                             right_raw_path=right_calib_path,
                                                                              verbose_calib=False)
     else:
         mtx_l = np.array([[990.54279248, 0, 683.62700852],
@@ -89,14 +103,29 @@ if __name__ == "__main__":
               [0.05854456]])
 
 
-    map_l_x, map_l_y, map_r_x, map_r_y = get_rect_map(mtx_l,
+
+    row, col, _ = cv2.imread(our_calib_left_images[0]).shape
+    img_shape = (col, row)
+    map_l_x, map_l_y, map_r_x, map_r_y, P1, P2 = get_rect_map(mtx_l,
                                                       dist_l,
                                                       mtx_r, 
                                                       dist_r, 
                                                       R, T,
-                                                      (1400, 1200), 
+                                                      img_shape, 
                                                       0.0)
 
+    if use_our_calib:
+        focal_length = P1[0][0]
+        if np.abs(P1[0][3]) > np.abs(P2[0][3]):
+            baseline = np.abs(P1[0][3]) / focal_length
+        else:
+            baseline = np.abs(P2[0][3]) / focal_length
+    
+    print(f'Focal length: {focal_length}')
+    print(f'Baseline: {baseline}')
+
+    # Init disparity module
+    disparity_module = DisparityModule_SGM(focal_length, baseline)
     
     for k in range(N): # for frame in video
         #################################
@@ -107,11 +136,16 @@ if __name__ == "__main__":
         right_path = get_right_image_path(k)
         img_right = cv2.imread(right_path)
 
+        # not an efficient solution but this is python
+        if use_our_calib:
+            img_left = cv2.imread(our_calib_left_images[k])
+            img_right = cv2.imread(our_calib_right_images[k])
         
-        # Rectification
-        img_left, img_right = rect_img_pair(img_left, img_right,
+            # Rectification
+            img_left, img_right = rect_img_pair(img_left, img_right,
                                             map_l_x, map_l_y,
                                             map_r_x, map_r_y)
+
 
         # Disparity
         depth_map = disparity_module.compute_depth_map(img_left, img_right)
@@ -122,7 +156,7 @@ if __name__ == "__main__":
 
 
         ### Perform Inference ###
-        results = model(left_path, classes=des_classes, conf=YOLOCONF)
+        results = model(img_left, classes=des_classes, conf=YOLOCONF)
         res = results[0]
 
         # Now you get full YOLO Results objects per class
