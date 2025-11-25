@@ -22,10 +22,12 @@ import torch.nn as nn
 from torchvision import transforms
 from PIL import Image
 
+from OTITS.disparity_module import *
+from OTITS.three_d_pos_calc import *
 
 # ByteTrack Params
-tau = 0.6
-YOLOCONF = 0.3
+tau = 0.5
+YOLOCONF = 0.2
 MATCHTHRESHOLD_IoU = 0.1#0.05
 MATCHTHRESHOLD_ReID = 0.8
 DEADALIVERATIO = 0.25 # Not used
@@ -33,6 +35,17 @@ DEAD_TIME = 90
 LOCAL_AREA_SCALE = 1
 FIRST_ASSOCIATION_METRIC = "IoU"# #"IoU", "ReID"
 base_id = 0 # ID to start counting from
+
+CLASS_MAP = {0: "Car", 1: "Cyclist", 2: "Pedestrian"}
+
+# Camera Calibration Constants (Placeholder values until calibration module is done
+focal_length = 707.0493
+baseline = 0.54
+cx_pp = 604.0814
+cy_pp = 180.5066
+
+
+
 
 if FIRST_ASSOCIATION_METRIC == "ReID":
     # Load pretrained ResNet50
@@ -85,6 +98,23 @@ H = np.array([[1,0,0,0,0,0,0,0],  # x
               [0,0,0,1,0,0,0,0],  # r
             ])
 """
+F = np.array([[1, 0, 0, 0, dt, 0,0,0], # u
+              [0, 1, 0, 0, 0, dt,0,0], # v
+              [0, 0, 1, 0, 0, 0,0,0], # s Area
+              [0, 0, 0, 1, 0, 0,0,0], # r Aspect ratio
+              [0, 0, 0, 0, 1, 0,0,0], # u_dot
+              [0, 0, 0, 0, 0, 1,0,0], # v_dot
+              [0, 0, 0, 0, 0, 0,1,dt], # d
+              [0, 0, 0, 0, 0, 0,0,1], # d_dot
+            ])
+H = np.array([[1,0,0,0,0,0,0,0],  # x
+              [0,1,0,0,0,0,0,0],  # y
+              [0,0,1,0,0,0,0,0],  # s
+              [0,0,0,1,0,0,0,0],  # r
+              [0,0,0,0,0,0,1,0],  # d
+            ])
+"""
+
 F = np.array([[1, 0, 0, 0, dt, 0], # u
               [0, 1, 0, 0, 0, dt], # v
               [0, 0, 1, 0, 0, 0], # s Area
@@ -98,6 +128,7 @@ H = np.array([[1,0,0,0,0,0],  # x
               [0,0,0,1,0,0],  # r
             ])
 """
+"""
 F = block_diag(point_model,point_model,point_model,point_model) # State-transition Matrix for xyxy
 H = np.array([[1,0,0,0,0,0,0,0],                                # Measurment Model
               [0,0,1,0,0,0,0,0],
@@ -105,19 +136,21 @@ H = np.array([[1,0,0,0,0,0,0,0],                                # Measurment Mod
               [0,0,0,0,0,0,1,0],])
 """
 
-Q =np.diag([1,1,1,1,0.001,0.001]) 
-R = np.diag([10,10,1,1])
+Q =np.diag([1,1,1,1,0.001,0.001,1,0.001]) 
+R = np.diag([10,10,1,1,1])
+#Q =np.diag([1,1,1,1,0.001,0.001]) 
+#R = np.diag([10,10,1,1])
 #Q = 0.01*np.diag([1,1,1,1,0.1,0.1,0.001,0.001]) 
 #R = np.diag([100,100,1,1])
 
 class Tracklet:
-    def __init__(self,id,z,cls,local_area=None,local_features=None):
+    def __init__(self,id,z,cls,xyz=np.array([0,0,0]),local_area=None,local_features=None):
         
         # Init internal Kalman Filter
-        kf = KalmanFilter(dim_x=6, dim_z=4)  
+        kf = KalmanFilter(dim_x=8, dim_z=5)  
         kf.F = F
         kf.H = H
-        kf.x = np.array([z[0],z[1],z[2],z[3],0,0])
+        kf.x = np.array([z[0],z[1],z[2],z[3],0,0,z[4],0])
 
         kf.P *= 100.0 # Large initial uncertainty
         kf.Q = Q
@@ -125,6 +158,9 @@ class Tracklet:
 
         self.kf = kf
         
+        # Location
+        self.xyz = xyz
+
         # Init ID
         self.id = id
 
@@ -306,8 +342,9 @@ class BYTETrack:
         self.base_id = base_id
 
     
-    def step(self, D_k,img_left):    
+    def step(self, D_k,img_left,depth_map):    
         
+
         if D_k.boxes is None or len(D_k.boxes) == 0:
             # No detections, just predict next state for all tracks
             for t in self.T:
@@ -345,6 +382,12 @@ class BYTETrack:
             # Update track i with detection j
             bbox = D_high[j][0]  # detection bbox [x1,y1,x2,y2]
             z = xyxy_to_xysr(bbox)
+            x1,y1,x2,y2 = bbox
+            w = x2 - x1
+            h = y2 - y1
+            # Get depth Measurement
+            _, _, Z_avg = calculate_3d_position(cx=z[0],cy=z[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            z = np.append(z,Z_avg)
             self.T[i].kf.update(z)  # Kalman filter correction step
             
             if FIRST_ASSOCIATION_METRIC == "ReID":
@@ -381,8 +424,18 @@ class BYTETrack:
         for i, j in matches:
             # Update track i with detection j
             bbox = D_low[j][0] # detection bbox [x1,y1,x2,y2]
-            z = xyxy_to_xysr(bbox)
+            z=xyxy_to_xysr(bbox)
+            x1,y1,x2,y2 = bbox
+            w = x2 - x1
+            h = y2 - y1
+            # Get depth Measurement
+            _, _, Z_avg = calculate_3d_position(cx=z[0],cy=z[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            z = np.append(z,Z_avg)
             T_remain[i].kf.update(z)  # Kalman filter correction step
+            # Get Kalman filtered xyz
+            X, Y, Z_avg = calculate_3d_position(cx=z[0],cy=z[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            T_remain[i].xyz = np.array([X,Y,Z_avg])
+
 
             if FIRST_ASSOCIATION_METRIC == "ReID":
                 local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
@@ -425,9 +478,16 @@ class BYTETrack:
             #gray = cv2.cvtColor(local_area,cv2.COLOR_BGR2GRAY)
             #kp, des = sift.detectAndCompute(gray, None)
             #local_features = des
+            z=xyxy_to_xysr(bbox)
+            x1,y1,x2,y2 = bbox
+            w = x2 - x1
+            h = y2 - y1
+            X, Y, Z_avg = calculate_3d_position(cx=z[0],cy=z[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            z = np.append(z,Z_avg)
             self.T.append(Tracklet(id=self.base_id, 
-                                z=xyxy_to_xysr(bbox), 
                                 cls=cls,
+                                z=z,
+                                xyz=np.array([X,Y,Z_avg]),
                                 local_area=local_area,
                                 #local_features=local_features
                                 ))
@@ -451,7 +511,7 @@ def draw_tracklets(img, tracklets, color=(255, 255, 0)):
     for t in tracklets:
         # Get current bbox estimate from Kalman filter
         bbox = xysr_to_xyxy(t.kf.x[:4])   # [x1, y1, x2, y2]
-        u_dot,v_dot = t.kf.x[4:]
+        u_dot,v_dot = t.kf.x[4:6]
         time_not_seen = t.time_not_seen
         x1, y1, x2, y2 = bbox.astype(int)
 
@@ -477,7 +537,8 @@ def draw_tracklets(img, tracklets, velocity_scale=10):
     for t in tracklets:
         # Get current bbox estimate from Kalman filter
         bbox = xysr_to_xyxy(t.kf.x[:4])   # [x1, y1, x2, y2]
-        u_dot, v_dot = t.kf.x[4:]         # velocity components
+        u_dot, v_dot = t.kf.x[4:6]         # velocity components
+        depth = t.kf.x[6]
         time_not_seen = t.time_not_seen
         x1, y1, x2, y2 = bbox.astype(int)
 
@@ -501,6 +562,10 @@ def draw_tracklets(img, tracklets, velocity_scale=10):
         if time_not_seen > 1:
             cv2.putText(img, f"missed:{time_not_seen}", (x2, y2 + 15),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        # --- Display depth
+        cv2.putText(img, f"Depth:{depth:.2f}m", (x1, y2 + 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
 
     return img
 
@@ -546,3 +611,24 @@ def filter_results_by_class(res, target_cls):
     # Assign only the filtered boxes
     new_res.boxes = res.boxes[cls_mask]
     return new_res
+
+def add_cls_count(img_left,T):
+    num_cars = sum(1 for t in T if t.cls == 0)
+    num_cyclists    = sum(1 for t in T if t.cls == 1)
+    num_pedestrians = sum(1 for t in T if t.cls == 2)
+
+    # Prepare text lines
+    lines = [
+        f"Cars: {num_cars}",
+        f"Cyclists: {num_cyclists}",
+        f"Pedestrians: {num_pedestrians}"
+    ]
+
+    # Draw each line in white in the top-left corner
+    y0, dy = 30, 30  # starting y and line spacing
+    for i, line in enumerate(lines):
+        y = y0 + i*dy
+        cv2.putText(img_left, line, (10, y),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2, cv2.LINE_AA)
+        
+    return img_left
