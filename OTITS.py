@@ -1,6 +1,7 @@
 from ultralytics import YOLO
 import numpy as np
 import cv2
+import glob
 
 import os
 import time
@@ -8,8 +9,11 @@ import time
 
 from OTITS.DATA import *
 from OTITS.OD import *
+from OTITS.CAM_CALIB import *
 
 N = 200 # Frames to run
+
+calibrate = False
 
 if __name__ == "__main__":
     
@@ -27,11 +31,78 @@ if __name__ == "__main__":
     cyclist_tracker = BYTETrack(100)
     car_tracker = BYTETrack(200)
     
+    # Raw paths
+    left_raw_path = ''
+    right_raw_path = ''
+    raw_path = "../data/34759_final_project_raw/"
+    if SEQ == 1:
+        left_raw_path = raw_path + "seq_01/image_02/data/"
+        right_raw_path = raw_path + "seq_01/image_03/data/"
+    elif SEQ == 2:
+        left_raw_path = raw_path + "seq_02/image_02/data/"
+        right_raw_path = raw_path + "seq_02/image_03/data/"
+    else:
+        left_raw_path = raw_path + "seq_02/image_02/data/"
+        right_raw_path = raw_path + "seq_02/image_03/data/"
+
+    # Calibrating camera
+    if calibrate:
+        ret_stereo, mtx_l, dist_l, mtx_r, dist_r, R, T, E, F = calibrate_cameras(left_raw_path=left_raw_path,
+                                                                             right_raw_path=right_raw_path,
+                                                                             verbose_calib=False)
+    else:
+        mtx_l = np.array([[990.54279248, 0, 683.62700852],
+                    [0, 990.04449073, 278.94829591],
+                    [0, 0, 1]])
+
+        dist_l = np.array([[-3.67497084e-01],
+                     [4.13810215e-01],
+                     [4.17168231e-04],
+                     [-2.23502645e-03],
+                     [-4.57329160e-01]])
+
+        mtx_r = np.array([[939.09699311, 0, 692.92619815],
+                    [0, 945.47266784, 268.42592101],
+                    [0, 0, 1]])
+
+        dist_r = np.array([[-3.42502670e-01],
+                    [2.40074946e-01],
+                    [-2.52471525e-04],
+                    [1.55403226e-03],
+                    [-1.36452084e-01]])
+
+        R = np.array([[0.99950091, 0.01952748, -0.02483177],
+              [-0.01933429,  0.9997811, 0.00799613],
+              [0.02498248, -0.00751204, 0.99965966]])
+  
+        T = np.array([[-0.55931108],
+              [0.01640622],
+              [0.05854456]])
+
+
+    map_l_x, map_l_y, map_r_x, map_r_y = get_rect_map(mtx_l,
+                                                      dist_l,
+                                                      mtx_r, 
+                                                      dist_r, 
+                                                      R, T,
+                                                      (1400, 1200), 
+                                                      0.0)
+
     
     for k in range(N): # for frame in video
-        # LEFT IMAGE
         left_path = get_left_image_path(k)
         img_left = cv2.imread(left_path)
+
+        right_path = get_right_image_path(k)
+        img_right = cv2.imread(right_path)
+
+        # Rectification
+        img_left, img_right = rect_img_pair(img_left, img_right,
+                                            map_l_x, map_l_y,
+                                            map_r_x, map_r_y)
+        # LEFT IMAGE
+
+
 
         ### Perform Inference ###
         results = model(left_path, classes=des_classes, conf=YOLOCONF)
