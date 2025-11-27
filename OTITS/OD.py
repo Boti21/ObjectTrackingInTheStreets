@@ -7,7 +7,7 @@ from scipy.optimize import linear_sum_assignment
 from filterpy.kalman import KalmanFilter
 from scipy.linalg import block_diag
 
-
+import random
 import torch
 import torchvision.models as models
 import torch.nn as nn
@@ -27,15 +27,36 @@ from OTITS.three_d_pos_calc import *
 from globals import *
 
 # ByteTrack Params
-tau = 0.5
-YOLOCONF = 0.2
-MATCHTHRESHOLD_IoU = 0.1#0.05
-MATCHTHRESHOLD_ReID = 0.8
+tau_pedestrians = 0.5
+tau_cyclists = 0.85#0.79
+tau_cars = 0.5 #seq2 0.8
+YOLOCONF = 0.1
+YOLOCONF_pedestrians = 0.4
+YOLOCONF_cyclists = 0.5
+YOLOCONF_cars = 0.2 #seg2:0.5
+MATCHTHRESHOLD_IoU = 0.05#0.05
+MATCHTHRESHOLD_ReID = 0.4
 DEADALIVERATIO = 0.25 # Not used
-DEAD_TIME = 90
-LOCAL_AREA_SCALE = 1
+DEAD_TIME_cars = 20#se2:40
+DEAD_TIME_pedestrians = 40#se2:40
+DEAD_TIME_cyclists = 25#se2:40
+DEAD_TIME_NOT_OCCLUDED = 10
+LOCAL_AREA_SCALE = 0.8
 FIRST_ASSOCIATION_METRIC = "IoU"# #"IoU", "ReID"
+
+# Rebirth params
+REBIRTH_DIST_THRESHOLD = 400#seq2100 #300  # pixels
+REBIRTH_LOOK_AHEAD = 30 #seq2:30
+REBIRTH_TIME_NOT_SEEN = 4
+# Kalman Params
+USE_ACCEL = False
+Q =np.diag([1,1,1,1,0.01,0.01,1,0.0001]) 
+R = np.diag([10,10,100,100,100])
+Q_accel =np.diag([1,1,1,1,0.000001,0.0000001,1,0.000001,0.0000001,0.0000001]) 
+R_accel = np.diag([10,10,1,1,1])
 base_id = 0 # ID to start counting from
+
+
 
 CLASS_MAP = {0: "Car", 1: "Cyclist", 2: "Pedestrian"}
 
@@ -103,9 +124,9 @@ F = np.array([[1, 0, 0, 0, dt, 0,0,0], # u
               [0, 1, 0, 0, 0, dt,0,0], # v
               [0, 0, 1, 0, 0, 0,0,0], # s Area
               [0, 0, 0, 1, 0, 0,0,0], # r Aspect ratio
-              [0, 0, 0, 0, 1.03, 0,0,0], # u_dot
-              [0, 0, 0, 0, 0, 1.03,0,0], # v_dot
-              [0, 0, 0, 0, 0, 0,1,dt], # d
+              [0, 0, 0, 0, 1, 0,0,0], # u_dot
+              [0, 0, 0, 0, 0, 1,0,0], # v_dot
+              [0, 0, 0, 0, 0, 0,1,0], # d
               [0, 0, 0, 0, 0, 0,0,1], # d_dot
             ])
 H = np.array([[1,0,0,0,0,0,0,0],  # x
@@ -114,6 +135,23 @@ H = np.array([[1,0,0,0,0,0,0,0],  # x
               [0,0,0,1,0,0,0,0],  # r
               [0,0,0,0,0,0,1,0],  # d
             ])
+F_accel = np.array([[1, 0, 0, 0, dt, 0,0,0,0.5*dt**2,0], # u
+                    [0, 1, 0, 0, 0, dt,0,0,0,0.5*dt**2], # v
+                    [0, 0, 1, 0, 0, 0,0,0,0,0], # s Area
+                    [0, 0, 0, 1, 0, 0,0,0,0,0], # r Aspect ratio
+                    [0, 0, 0, 0, 1, 0,0,0,dt,0], # u_dot
+                    [0, 0, 0, 0, 0, 1,0,0,0,dt], # v_dot
+                    [0, 0, 0, 0, 0, 0,1,dt,0,0,], # d
+                    [0, 0, 0, 0, 0, 0,0,1,0,0], # d_dot
+                    [0, 0, 0, 0, 0, 0,0,0,1,0], # u_ddot
+                    [0, 0, 0, 0, 0, 0,0,0,0,1], # v_ddot
+                    ])
+H_accel = np.array([[1,0,0,0,0,0,0,0,0,0],  # x
+                    [0,1,0,0,0,0,0,0,0,0],  # y
+                    [0,0,1,0,0,0,0,0,0,0],  # s
+                    [0,0,0,1,0,0,0,0,0,0],  # r
+                    [0,0,0,0,0,0,1,0,0,0],  # d
+                    ])
 """
 
 F = np.array([[1, 0, 0, 0, dt, 0], # u
@@ -137,8 +175,6 @@ H = np.array([[1,0,0,0,0,0,0,0],                                # Measurment Mod
               [0,0,0,0,0,0,1,0],])
 """
 
-Q =np.diag([1,1,1,1,0.000001,0.0000001,1,0.000001]) 
-R = np.diag([10,10,1,1,1])
 #Q =np.diag([1,1,1,1,0.001,0.001]) 
 #R = np.diag([10,10,1,1])
 #Q = 0.01*np.diag([1,1,1,1,0.1,0.1,0.001,0.001]) 
@@ -148,23 +184,33 @@ class Tracklet:
     def __init__(self,id,z,cls,xyz=np.array([0,0,0]),local_area=None,local_features=None):
         
         # Init internal Kalman Filter
-        kf = KalmanFilter(dim_x=8, dim_z=5)  
-        kf.F = F
-        kf.H = H
-        kf.x = np.array([z[0],z[1],z[2],z[3],0,0,z[4],0])
+        if USE_ACCEL:
+            kf = KalmanFilter(dim_x=10, dim_z=5) 
+            kf.F = F_accel
+            kf.H = H_accel
+            kf.x = np.array([z[0],z[1],z[2],z[3],0,0,z[4],0,0,0])
+            kf.P *= 100.0 # Large initial uncertainty
+            kf.Q = Q_accel
+            kf.R = R_accel
+            
+        else: 
+            kf = KalmanFilter(dim_x=8, dim_z=5) 
+            kf.F = F
+            kf.H = H
+            kf.x = np.array([z[0],z[1],z[2],z[3],0,0,z[4],0])
 
-        kf.P *= 100.0 # Large initial uncertainty
-        kf.Q = Q
-        kf.R = R
+            kf.P *= 100.0 # Large initial uncertainty
+            kf.Q = Q
+            kf.R = R
 
         self.kf = kf
         
         # Location
         self.xyz = xyz
 
-        # Init ID
+        # Init ID & other attributes
         self.id = id
-
+        self.occluded = False
         self.cls = cls
 
         self.time_not_seen = 0
@@ -338,9 +384,11 @@ def find_matches_with_hungarian_algorithm(tracks, detections,
 
 class BYTETrack:
     
-    def __init__(self,base_id):
+    def __init__(self,base_id,tau,deadtime=35):
         self.T = []
         self.base_id = base_id
+        self.tau = tau
+        self.deadtime = deadtime
 
     
     def step(self, D_k,img_left,depth_map):    
@@ -350,6 +398,11 @@ class BYTETrack:
             # No detections, just predict next state for all tracks
             for t in self.T:
                 t.kf.predict()
+                t.time_not_seen += 1
+                if t.time_not_seen > self.deadtime or (not t.occluded and t.time_not_seen > DEAD_TIME_NOT_OCCLUDED):
+                    print(f"Killing Tracklet wit ID {t.id}, and class: {t.cls}!")
+                    self.T.remove(t)
+
             return self.T.copy()
 
         D_high = []
@@ -360,7 +413,7 @@ class BYTETrack:
             conf = float(d.conf)
             cls  = int(d.cls)
             det = (box, conf, cls)
-            if conf > tau:
+            if conf > self.tau:
                 D_high.append(det)
             else:
                 D_low.append(det)
@@ -369,6 +422,7 @@ class BYTETrack:
         ### Predict new locations of tracks ###
         for t in self.T:
             t.kf.predict()
+            
         
         ### First Association ###
         matches = find_matches_with_hungarian_algorithm(self.T, D_high,
@@ -390,6 +444,10 @@ class BYTETrack:
             _, _, Z_avg = calculate_3d_position(cx=z[0],cy=z[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
             z = np.append(z,Z_avg)
             self.T[i].kf.update(z)  # Kalman filter correction step
+            X, Y, Z_avg = calculate_3d_position(cx=self.T[i].kf.x[0],cy=self.T[i].kf.x[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            self.T[i].xyz = np.array([X,Y,Z_avg])
+            
+            self.T[i].occluded = False
             
             if FIRST_ASSOCIATION_METRIC == "ReID":
                 local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
@@ -434,14 +492,16 @@ class BYTETrack:
             z = np.append(z,Z_avg)
             T_remain[i].kf.update(z)  # Kalman filter correction step
             # Get Kalman filtered xyz
-            X, Y, Z_avg = calculate_3d_position(cx=z[0],cy=z[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            X, Y, Z_avg = calculate_3d_position(cx=T_remain[i].kf.x[0],cy=T_remain[i].kf.x[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
             T_remain[i].xyz = np.array([X,Y,Z_avg])
+
+            T_remain[i].occluded = False
 
 
             if FIRST_ASSOCIATION_METRIC == "ReID":
                 local_area = get_local_area(img_left,bbox,scale=LOCAL_AREA_SCALE)
-                #T_remain[i].local_area = local_area
-                #T_remain[i].embedding = get_resnet50_embedding(local_area)
+                T_remain[i].local_area = local_area
+                T_remain[i].embedding = get_resnet50_embedding(local_area)
             #gray = cv2.cvtColor(local_area,cv2.COLOR_BGR2GRAY)
             #kp, des = sift.detectAndCompute(gray, None)
             #T_remain[i].local_features = des
@@ -455,19 +515,68 @@ class BYTETrack:
 
         for t in T_reremain:
             t.time_not_seen += 1
+            x1, y1, x2, y2 = xysr_to_xyxy(t.kf.x[:4])
+            w = x2 - x1
+            h = y2 - y1
+            # Check whether tracklet is occluded
+            _, _, Z_avg = calculate_3d_position(cx=t.kf.x[0],cy=t.kf.x[1],f=focal_length,cx_pp=cx_pp,cy_pp=cy_pp,width=w,height=h,depth_map=depth_map)
+            if t.kf.x[6] > Z_avg:
+                t.occluded = True
 
         alive_tracks = []
         for t in self.T:
             t.time_alive += 1
-            if t.time_not_seen > DEAD_TIME:
-            # if (t.time_not_seen / t.time_alive) > DEADALIVERATIO:
+
+            if t.time_not_seen > self.deadtime or (not t.occluded and t.time_not_seen > DEAD_TIME_NOT_OCCLUDED):
                 print(f"Killing Tracklet wit ID {t.id}, and class: {t.cls}!")
                 continue  
+            
             else:
                 alive_tracks.append(t)
 
         # Replace T with only surviving tracks
         self.T = alive_tracks
+
+        ### See whether missed/occluded tracklets can be matched with new detections ###
+        # --- Collect occluded tracks ---
+        occluded_tracks = [t for t in self.T if t.occluded and t.time_not_seen > REBIRTH_TIME_NOT_SEEN]
+
+        if occluded_tracks and D_remain:
+            cost_matrix = np.full((len(occluded_tracks), len(D_remain)), np.inf)
+
+            for i, t in enumerate(occluded_tracks):
+                preds = predict_future_positions(t, N=REBIRTH_LOOK_AHEAD)
+                for j, d in enumerate(D_remain):
+                    bbox, conf, cls = d
+                    cx_det = (bbox[0]+bbox[2]) / 2
+                    cy_det = (bbox[1]+bbox[3]) / 2
+
+                    distances = [np.linalg.norm([px - cx_det, py - cy_det]) for (px, py) in preds]
+                    min_dist = min(distances)
+
+                    if min_dist < REBIRTH_DIST_THRESHOLD and cls == t.cls:
+                        cost_matrix[i, j] = min_dist
+            
+            try:
+                track_indices, det_indices = linear_sum_assignment(cost_matrix)
+            except:
+                track_indices, det_indices = [], []
+
+            used_dets = set()
+            for i, j in zip(track_indices, det_indices):
+                if cost_matrix[i, j] != np.inf:
+                    t = occluded_tracks[i]
+                    bbox, conf, cls = D_remain[j]
+
+                    z = xyxy_to_xysr(bbox)
+                    z = np.append(z, t.kf.x[6])  # keep depth
+                    t.kf.update(z)
+                    t.time_not_seen = 0
+                    t.occluded = False
+
+                    used_dets.add(j)
+
+            D_remain = [d for idx, d in enumerate(D_remain) if idx not in used_dets]
 
         ### Initialize New Tracklets ###
         for d in D_remain:
@@ -494,6 +603,11 @@ class BYTETrack:
                                 ))
         return self.T.copy()
 
+def predict_future_positions(t, N=REBIRTH_LOOK_AHEAD):
+    cx, cy = t.kf.x[0], t.kf.x[1]
+    vx, vy = t.kf.x[4], t.kf.x[5]
+    preds = [(cx + k*vx, cy + k*vy) for k in range(1, N+1)]
+    return preds
 
 
 def draw_yolo_predictions(image, results, draw_color='left'):
@@ -507,6 +621,19 @@ def draw_yolo_predictions(image, results, draw_color='left'):
         cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     return image
 
+def id_to_color(tracklet_id, base_color=None):
+    """
+    Generate a reproducible distinct color per tracklet ID.
+    If base_color is given, blend with it; otherwise pick a random hue.
+    """
+    rng = np.random.default_rng(seed=tracklet_id)  # deterministic per ID
+    rand_color = rng.integers(0, 256, size=3)
+    if base_color is not None:
+        # Blend 50/50 with base class color
+        blended = (0.5 * np.array(base_color) + 0.5 * rand_color).astype(int)
+        return tuple(int(c) for c in blended)
+    else:
+        return tuple(int(c) for c in rand_color)
 """
 def draw_tracklets(img, tracklets, color=(255, 255, 0)):
     for t in tracklets:
@@ -524,9 +651,65 @@ def draw_tracklets(img, tracklets, color=(255, 255, 0)):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     return img
 """
-import cv2
-import numpy as np
+def draw_tracklets(img, tracklets, velocity_scale=10, accel_scale=20):
+    # Base class colors (BGR)
+    class_colors = {
+        2: (255, 255, 0),   # cyan
+        1: (0, 255, 0),     # green
+        0: (0, 0, 255)      # red
+    }
 
+    for idx, t in enumerate(tracklets):
+        # Get current bbox estimate from Kalman filter
+        bbox = xysr_to_xyxy(t.kf.x[:4])   # [x1, y1, x2, y2]
+        u_dot, v_dot = t.kf.x[4:6]        # velocity components
+        depth = t.kf.x[6]
+        if USE_ACCEL:
+            ax, ay = t.kf.x[7:9]              # acceleration components
+        time_not_seen = t.time_not_seen
+        x1, y1, x2, y2 = bbox.astype(int)
+
+        # --- Instance-specific shade ---
+        # Pick color based on class
+        color = class_colors.get(t.cls, (255, 255, 255))
+        #color = id_to_color(t.id, base_color)
+
+
+        
+        # Draw rectangle or if t.occluded than make it a dashed line
+        if t.occluded:
+            draw_dashed_rectangle(img, (x1, y1), (x2, y2), color, 2)
+        else:
+            cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+
+        # Draw ID above the box
+        cv2.putText(img, f"ID:{t.id} cls:{t.cls}", (x1, y1 - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        # --- Draw velocity vector (green arrow) ---
+        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2   # centroid
+        vel_end = (int(cx + velocity_scale * u_dot),
+                   int(cy + velocity_scale * v_dot))
+        cv2.arrowedLine(img, (cx, cy), vel_end, (0, 255, 0), 2, tipLength=0.3)
+
+        if USE_ACCEL:
+            # --- Draw acceleration vector (purple arrow) ---
+            acc_end = (int(cx + accel_scale * ax),
+                    int(cy + accel_scale * ay))
+            cv2.arrowedLine(img, (cx, cy), acc_end, (255, 0, 255), 2, tipLength=0.3)
+
+        # --- Display time_not_seen if > 1 ---
+        if time_not_seen > 1:
+            cv2.putText(img, f"missed:{time_not_seen}", (x2+10, y2 + 15),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+
+        # --- Display depth
+        cv2.putText(img, f"Depth:{depth:.2f}m", (x1, y2 + 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
+
+    return img
+"""
 def draw_tracklets(img, tracklets, velocity_scale=10):
     # Define class-dependent colors
     class_colors = {
@@ -569,7 +752,7 @@ def draw_tracklets(img, tracklets, velocity_scale=10):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 255), 1)
 
     return img
-
+"""
 
 def get_local_area(img, bbox, scale=0.5):
     
@@ -601,17 +784,26 @@ def get_local_area(img, bbox, scale=0.5):
         return None  # invalid bbox
 
 
-# Helper: filter Results by class
+# Helper: filter Results by class with confidence thresholds
 def filter_results_by_class(res, target_cls):
-    # Boolean mask for the desired class
+    # Map class → confidence threshold
+    thresholds = {
+        0: YOLOCONF_cars,
+        1: YOLOCONF_cyclists,
+        2: YOLOCONF_pedestrians
+    }
+
+    # Boolean mask for class and confidence
     cls_mask = res.boxes.cls.int().cpu().numpy() == target_cls
+    conf_mask = res.boxes.conf.cpu().numpy() >= thresholds.get(target_cls, 0.0)
+
+    mask = cls_mask & conf_mask
 
     # Create a new Results object with same metadata
     new_res = res.new()
-
-    # Assign only the filtered boxes
-    new_res.boxes = res.boxes[cls_mask]
+    new_res.boxes = res.boxes[mask]
     return new_res
+
 
 def add_cls_count(img_left,T):
     num_cars = sum(1 for t in T if t.cls == 0)
@@ -633,3 +825,23 @@ def add_cls_count(img_left,T):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255,255,255), 2, cv2.LINE_AA)
         
     return img_left
+
+
+def draw_dashed_rectangle(img, pt1, pt2, color, thickness=2, dash_length=10):
+    x1, y1 = pt1
+    x2, y2 = pt2
+
+    # Top edge
+    for x in range(x1, x2, dash_length*2):
+        cv2.line(img, (x, y1), (min(x+dash_length, x2), y1), color, thickness)
+    # Bottom edge
+    for x in range(x1, x2, dash_length*2):
+        cv2.line(img, (x, y2), (min(x+dash_length, x2), y2), color, thickness)
+    # Left edge
+    for y in range(y1, y2, dash_length*2):
+        cv2.line(img, (x1, y), (x1, min(y+dash_length, y2)), color, thickness)
+    # Right edge
+    for y in range(y1, y2, dash_length*2):
+        cv2.line(img, (x2, y), (x2, min(y+dash_length, y2)), color, thickness)
+
+

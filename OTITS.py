@@ -29,13 +29,14 @@ if __name__ == "__main__":
     model = YOLO("OTITS/models/best.pt").to(device)
     
     des_classes = [0,1,2]
-    label_path = os.path.join("data","34759_final_project_rect",f"seq_{SEQ:02d}","labels.txt")
-    annotations = load_ground_truth(label_path) 
+    if SEQ != 3:
+        label_path = os.path.join("data","34759_final_project_rect",f"seq_{SEQ:02d}","labels.txt")
+        annotations = load_ground_truth(label_path) 
 
     # Initiate ByteTrack
-    pedestrian_tracker = BYTETrack(0)
-    cyclist_tracker = BYTETrack(100)
-    car_tracker = BYTETrack(200)
+    pedestrian_tracker = BYTETrack(0,tau=tau_pedestrians,deadtime=DEAD_TIME_pedestrians)
+    cyclist_tracker = BYTETrack(100,tau=tau_cyclists,deadtime=DEAD_TIME_cyclists)
+    car_tracker = BYTETrack(200,tau=tau_cars,deadtime=DEAD_TIME_cars)
 
     #focal_length = 7.070493e+02
     #baseline = 0.54
@@ -191,12 +192,12 @@ if __name__ == "__main__":
         #################################
         #           Evaluation          #
         #################################
-        frame_annotations = get_frame_annotations(annotations, k)
+        frame_annotations = get_frame_annotations(annotations, k) if SEQ != 3 else None
         #rmse_ped = rmse_xyz(T_pedestrian, frame_annotations)
         #rmse_cyc = rmse_xyz(T_cyclist, frame_annotations)
         #rmse_car = rmse_xyz(T_car, frame_annotations)
         
-
+        """
         preds = []
         for tr in T:  
             preds.append({
@@ -206,6 +207,7 @@ if __name__ == "__main__":
 
         metrics = precision_recall(preds, frame_annotations, ["Car","Cyclist","Pedestrian"])
         print(f"Frame {k}: {metrics}")
+        """
 
         #################################
         #          Visualization        #
