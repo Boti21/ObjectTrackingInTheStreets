@@ -15,6 +15,7 @@ from OTITS.EVAL import *
 from OTITS import disparity_module
 from OTITS.disparity_module import DisparityModule_SGM
 from OTITS.three_d_pos_calc import calculate_3d_position
+from globals import *
 
 N = 200 # Frames to run
 
@@ -36,11 +37,15 @@ if __name__ == "__main__":
     cyclist_tracker = BYTETrack(100)
     car_tracker = BYTETrack(200)
 
-    focal_length = 7.070493e+02
-    baseline = 0.54
+    #focal_length = 7.070493e+02
+    #baseline = 0.54
+    #cx_pp = 604.0814
+    #cy_pp = 180.5066
 
     print(f'Focal length: {focal_length}')
     print(f'Baseline: {baseline}')
+    print(f'Cx: {cx_pp}')
+    print(f'Cy: {cy_pp}')
     
     # Raw paths
     left_raw_path = ''
@@ -116,6 +121,8 @@ if __name__ == "__main__":
 
     if use_our_calib:
         focal_length = P1[0][0]
+        cx_pp = P1[0, 2]
+        cy_pp = P1[1, 2]
         if np.abs(P1[0][3]) > np.abs(P2[0][3]):
             baseline = np.abs(P1[0][3]) / focal_length
         else:
@@ -123,6 +130,8 @@ if __name__ == "__main__":
     
     print(f'Focal length: {focal_length}')
     print(f'Baseline: {baseline}')
+    print(f'Cx: {cx_pp}')
+    print(f'Cy: {cy_pp}')
 
     # Init disparity module
     disparity_module = DisparityModule_SGM(focal_length, baseline)
@@ -146,9 +155,14 @@ if __name__ == "__main__":
                                             map_l_x, map_l_y,
                                             map_r_x, map_r_y)
 
+        cv2.imshow("rect images", img_left)
 
         # Disparity
         depth_map = disparity_module.compute_depth_map(img_left, img_right)
+        debug_depth_map = cv2.normalize(depth_map, None, 255, 0, cv2.NORM_MINMAX)
+        debug_depth_map = np.uint8(255 - depth_map)
+        debug_depth_map = cv2.applyColorMap(debug_depth_map, cv2.COLORMAP_BONE)
+        cv2.imshow("depth map", debug_depth_map)
 
 
         # LEFT IMAGE

@@ -6,7 +6,7 @@ import glob
 import os
 import time
 
-SEQ = 1
+SEQ = 2
 
 def load_ground_truth(filepath):
     with open(filepath, "r") as f:

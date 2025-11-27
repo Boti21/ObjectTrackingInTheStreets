@@ -24,6 +24,7 @@ from PIL import Image
 
 from OTITS.disparity_module import *
 from OTITS.three_d_pos_calc import *
+from globals import *
 
 # ByteTrack Params
 tau = 0.5
@@ -39,10 +40,10 @@ base_id = 0 # ID to start counting from
 CLASS_MAP = {0: "Car", 1: "Cyclist", 2: "Pedestrian"}
 
 # Camera Calibration Constants (Placeholder values until calibration module is done
-focal_length = 707.0493
-baseline = 0.54
-cx_pp = 604.0814
-cy_pp = 180.5066
+#focal_length = 707.0493
+#baseline = 0.54
+#cx_pp = 604.0814
+#cy_pp = 180.5066
 
 
 
@@ -102,8 +103,8 @@ F = np.array([[1, 0, 0, 0, dt, 0,0,0], # u
               [0, 1, 0, 0, 0, dt,0,0], # v
               [0, 0, 1, 0, 0, 0,0,0], # s Area
               [0, 0, 0, 1, 0, 0,0,0], # r Aspect ratio
-              [0, 0, 0, 0, 1, 0,0,0], # u_dot
-              [0, 0, 0, 0, 0, 1,0,0], # v_dot
+              [0, 0, 0, 0, 1.03, 0,0,0], # u_dot
+              [0, 0, 0, 0, 0, 1.03,0,0], # v_dot
               [0, 0, 0, 0, 0, 0,1,dt], # d
               [0, 0, 0, 0, 0, 0,0,1], # d_dot
             ])
@@ -136,7 +137,7 @@ H = np.array([[1,0,0,0,0,0,0,0],                                # Measurment Mod
               [0,0,0,0,0,0,1,0],])
 """
 
-Q =np.diag([1,1,1,1,0.001,0.001,1,0.001]) 
+Q =np.diag([1,1,1,1,0.000001,0.0000001,1,0.000001]) 
 R = np.diag([10,10,1,1,1])
 #Q =np.diag([1,1,1,1,0.001,0.001]) 
 #R = np.diag([10,10,1,1])
