@@ -217,7 +217,7 @@ if __name__ == "__main__":
         img_left = draw_tracklets(img_left,T)
         img_left = add_cls_count(img_left,T)
         
-        cv2.imshow("Left Image with Ground Truth + YOLO", img_left)
+        cv2.imshow("Left Image with Tracklets", img_left)
 
         cv2.waitKey(25)
 
