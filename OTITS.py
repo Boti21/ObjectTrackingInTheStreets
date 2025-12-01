@@ -4,13 +4,12 @@ import cv2
 import glob
 
 import os
-import time
 
 
 from OTITS.DATA import *
 from OTITS.OD import *
 from OTITS.CAM_CALIB import *
-from OTITS.EVAL import *
+
 
 from OTITS import disparity_module
 from OTITS.disparity_module import DisparityModule_SGM
@@ -162,19 +161,14 @@ if __name__ == "__main__":
         depth_map = disparity_module.compute_depth_map(img_left, img_right)
         debug_depth_map = cv2.normalize(depth_map, None, 255, 0, cv2.NORM_MINMAX)
         debug_depth_map = np.uint8(255 - depth_map)
-        debug_depth_map = cv2.applyColorMap(debug_depth_map, cv2.COLORMAP_BONE)
-        cv2.imshow("depth map", debug_depth_map)
-
-
-        # LEFT IMAGE
-
+        debug_depth_map = cv2.applyColorMap(debug_depth_map, cv2.COLORMAP_JET)
 
 
         ### Perform Inference ###
         results = model(img_left, classes=des_classes, conf=YOLOCONF)
         res = results[0]
 
-        # Now you get full YOLO Results objects per class
+        # YOLO Results objects per class
         D_k_pedestrians = filter_results_by_class(res, 2)  # person
         D_k_cyclists    = filter_results_by_class(res, 1)  # bicycle
         D_k_cars        = filter_results_by_class(res, 0)  # car
@@ -189,51 +183,19 @@ if __name__ == "__main__":
         T_car = car_tracker.step(D_k_cars,img_left,depth_map)
         T.extend(T_car)
        
-        #################################
-        #           Evaluation          #
-        #################################
-        frame_annotations = get_frame_annotations(annotations, k) if SEQ != 3 else None
-        #rmse_ped = rmse_xyz(T_pedestrian, frame_annotations)
-        #rmse_cyc = rmse_xyz(T_cyclist, frame_annotations)
-        #rmse_car = rmse_xyz(T_car, frame_annotations)
-        
-        """
-        preds = []
-        for tr in T:  
-            preds.append({
-                "bbox": xysr_to_xyxy(tr.kf.x[:4]),   
-                "class": tr.cls,
-            })
-
-        metrics = precision_recall(preds, frame_annotations, ["Car","Cyclist","Pedestrian"])
-        print(f"Frame {k}: {metrics}")
-        """
 
         #################################
         #          Visualization        #
         #################################
         #img_left = draw_ground_truth(img_left, annotations, k)
         #img_left = draw_yolo_predictions(img_left, results)
+        debug_depth_map = draw_yolo_predictions(debug_depth_map, results)
         img_left = draw_tracklets(img_left,T)
         img_left = add_cls_count(img_left,T)
         
+        cv2.imshow("Depth Map + YOLO Predictions : Input to Tracking", debug_depth_map)
         cv2.imshow("Left Image with Tracklets", img_left)
 
         cv2.waitKey(25)
 
     cv2.destroyAllWindows()
-
-
-
-    """
-        # RIGHT IMAGE
-        right_path = get_right_image_path(i)
-        results_right = model(source=right_path, classes=des_classes)
-        img_right = cv2.imread(right_path)
-        img_right = draw_ground_truth(img_right, annotations, i)
-        img_right = draw_yolo_predictions(img_right, results_left, draw_color='left')
-        img_right = draw_yolo_predictions(img_right, results_right, draw_color='right')
-        
-        cv2.imshow("Right Image with Ground Truth + YOLO", img_right)
-    """
-

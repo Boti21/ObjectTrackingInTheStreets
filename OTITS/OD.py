@@ -27,26 +27,26 @@ from OTITS.three_d_pos_calc import *
 from globals import *
 
 # ByteTrack Params
-tau_pedestrians = 0.5
-tau_cyclists = 0.85#0.79
-tau_cars = 0.5 #seq2 0.8
+tau_pedestrians = 0.6
+tau_cyclists = 0.85
+tau_cars = 0.5 
 YOLOCONF = 0.1
 YOLOCONF_pedestrians = 0.4
 YOLOCONF_cyclists = 0.5
-YOLOCONF_cars = 0.2 #seg2:0.5
-MATCHTHRESHOLD_IoU = 0.05#0.05
+YOLOCONF_cars = 0.2 
+MATCHTHRESHOLD_IoU = 0.05
 MATCHTHRESHOLD_ReID = 0.4
 DEADALIVERATIO = 0.25 # Not used
-DEAD_TIME_cars = 20#se2:40
-DEAD_TIME_pedestrians = 40#se2:40
-DEAD_TIME_cyclists = 25#se2:40
-DEAD_TIME_NOT_OCCLUDED = 10
+DEAD_TIME_cars = 20
+DEAD_TIME_pedestrians = 56
+DEAD_TIME_cyclists = 25
+DEAD_TIME_NOT_OCCLUDED = 30
 LOCAL_AREA_SCALE = 0.8
-FIRST_ASSOCIATION_METRIC = "IoU"# #"IoU", "ReID"
+FIRST_ASSOCIATION_METRIC = "IoU"# # "IoU" or "ReID"
 
 # Rebirth params
-REBIRTH_DIST_THRESHOLD = 400#seq2100 #300  # pixels
-REBIRTH_LOOK_AHEAD = 30 #seq2:30
+REBIRTH_DIST_THRESHOLD = 400 # pixels
+REBIRTH_LOOK_AHEAD = 30
 REBIRTH_TIME_NOT_SEEN = 4
 # Kalman Params
 USE_ACCEL = False
@@ -92,7 +92,7 @@ if FIRST_ASSOCIATION_METRIC == "ReID":
 
 def get_resnet50_embedding(img_crop):
     # img_crop: numpy array (BGR from OpenCV)
-    img_rgb = Image.fromarray(img_crop[..., ::-1])  # convert BGR→RGB
+    img_rgb = Image.fromarray(img_crop[..., ::-1])  # convert BGR to RGB
     tensor = preprocess(img_rgb).unsqueeze(0).to(device)  # add batch dimension, move to GPU
     with torch.no_grad():
         emb = resnet50(tensor)                      # shape [1, 2048, 1, 1]
@@ -621,10 +621,7 @@ def draw_yolo_predictions(image, results, draw_color='left'):
     return image
 
 def id_to_color(tracklet_id, base_color=None):
-    """
-    Generate a reproducible distinct color per tracklet ID.
-    If base_color is given, blend with it; otherwise pick a random hue.
-    """
+   
     rng = np.random.default_rng(seed=tracklet_id)  # deterministic per ID
     rand_color = rng.integers(0, 256, size=3)
     if base_color is not None:
